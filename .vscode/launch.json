@@ -17,6 +17,16 @@
         {
             "type": "node",
             "request": "launch",
+            "name": "Analyze-Reset",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "program": "${workspaceFolder}\\launch.js",
+            "args": ["analyze-reset"]
+        },
+        {
+            "type": "node",
+            "request": "launch",
             "name": "Prod",
             "skipFiles": [
                 "<node_internals>/**"
