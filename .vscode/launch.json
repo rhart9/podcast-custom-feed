@@ -33,6 +33,16 @@
             ],
             "program": "${workspaceFolder}\\launch.js",
             "args": ["prod"]
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "Prod-Reset",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "program": "${workspaceFolder}\\launch.js",
+            "args": ["prod-reset"]
         }
     ]
 }

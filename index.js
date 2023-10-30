@@ -1,13 +1,18 @@
 require('dotenv').config();
+let { v4: uuidv4 } = require('uuid');
 
 let _itemCount, _client;
 const _now = new Date();
+const _batchUUID = uuidv4();
 
 exports.handler = async (event) => {
   await connect();
 
   if (event.mode == "analyze-reset") {
     return analyzeReset();
+  }
+  else if (event.mode == "prod-reset") {
+    return prodReset();
   }
 
   let items = await fetch();
@@ -81,12 +86,13 @@ async function analyze(items) {
   let batch = {}
   addBatchValues(batch);
 
-  db.collection("rss-entry-analyze-batch").insertOne(batch);
+  await db.collection("rss-entry-analyze-batch").insertOne(batch);
   
   return "Success";
 }
 
 function addBatchValues(item) {
+  item.batch_uuid = _batchUUID;
   item.count = _itemCount;
   item.download_dt = _now;
   item.download_dt_local = _now.toLocaleString('en-US', { timeZone: 'America/New_York' });
@@ -95,10 +101,64 @@ function addBatchValues(item) {
 async function analyzeReset() {
   let db = _client.db(process.env.MONGO_DB);
 
-  db.collection("rss-entry-analyze").deleteMany({});
-  db.collection("rss-entry-analyze-batch").deleteMany({});
+  await db.collection("rss-entry-analyze").deleteMany({});
+  await db.collection("rss-entry-analyze-batch").deleteMany({});
 }
 
 async function prod(items) {
-  return "Not implemented"
+  let db = _client.db(process.env.MONGO_DB);
+  let rssEntries = db.collection("rss-entry");
+
+  await Promise.all(items.map((item, index) => new Promise(async (resolve, reject) => {
+    let query = { "guid._text": item.guid._text };
+    let dbItem = await rssEntries.findOne(query);
+
+    if (!dbItem) {
+      dbItem = item;
+      dbItem.created_dt = _now;
+      rssEntries.insertOne(dbItem);
+    }
+    else {
+      let write_log = false;
+      let log = {}
+
+      if (dbItem.title._text != item.title._text) {
+        write_log = true;
+        log.old_title = dbItem.title._text;
+        log.new_title = item.title._text;
+        dbItem.title._text = item.title._text;
+      }
+      if (dbItem.description._text != item.description._text) {
+        write_log = true;
+        log.old_description = dbItem.description._text;
+        log.new_description = item.description._text;
+        dbItem.description._text = item.description._text;
+      }
+      if (write_log) {
+        log.updated_dt = _now;
+        if (!dbItem.changelog) {
+          dbItem.changelog = [];
+        }
+        dbItem.changelog.push(log);
+      }
+    }
+
+    dbItem.batch_uuid = _batchUUID;
+    dbItem.updated_dt = _now;
+    await rssEntries.replaceOne(query, dbItem);
+
+    resolve();
+  })));
+
+  let batch = {}
+  addBatchValues(batch);
+
+  await db.collection("rss-entry-batch").insertOne(batch);
+}
+
+async function prodReset() {
+  let db = _client.db(process.env.MONGO_DB);
+
+  await db.collection("rss-entry").deleteMany({});
+  await db.collection("rss-entry-batch").deleteMany({});
 }
