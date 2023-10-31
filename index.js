@@ -1,7 +1,7 @@
 require('dotenv').config();
 let { v4: uuidv4 } = require('uuid');
 
-let _itemCount, _client;
+let _itemCount, _db;
 const _now = new Date();
 const _batchUUID = uuidv4();
 
@@ -9,19 +9,25 @@ exports.handler = async (event) => {
   await connect();
 
   if (event.mode == "analyze-reset") {
-    return analyzeReset();
+    await analyzeReset();
   }
   else if (event.mode == "prod-reset") {
-    return prodReset();
+    await prodReset();
   }
+  else {
+    let items = await fetch();
 
-  let items = await fetch();
+    let batch = {}
+    addBatchValues(batch);
 
-  if (event.mode == "analyze") {
-    return analyze(items);
-  }
-  else if (event.mode == "prod") {
-    return prod(items)
+    await _db.collection("rss-entry-batch").insertOne(batch);
+
+    if (event.mode == "analyze" || event.mode == "prod") {
+      await analyze(items);
+    }
+    if (event.mode == "processEntries" || event.mode == "prod") {
+      await processEntries(items)
+    }
   }
 
   return event;
@@ -30,9 +36,10 @@ exports.handler = async (event) => {
 async function connect() {
   const {MongoClient} = require('mongodb');
   let mongoUri = process.env.MONGO_URI;
-  _client = new MongoClient(mongoUri);
+  let client = new MongoClient(mongoUri);
   
-  await _client.connect();
+  await client.connect();
+  _db = client.db(process.env.MONGO_DB);
 }
 
 async function fetch() {
@@ -70,8 +77,6 @@ async function fetch() {
 }
 
 async function analyze(items) {
-  let db = _client.db(process.env.MONGO_DB);
-
   items.forEach((item, index) => {
     item.index = index;
     if (item.description && item.description._text) {
@@ -80,15 +85,8 @@ async function analyze(items) {
     addBatchValues(item);
   });
   
-  let entries = db.collection("rss-entry-analyze");
+  let entries = _db.collection("rss-entry-analyze");
   await entries.insertMany(items);
-
-  let batch = {}
-  addBatchValues(batch);
-
-  await db.collection("rss-entry-analyze-batch").insertOne(batch);
-  
-  return "Success";
 }
 
 function addBatchValues(item) {
@@ -99,15 +97,11 @@ function addBatchValues(item) {
 }
 
 async function analyzeReset() {
-  let db = _client.db(process.env.MONGO_DB);
-
-  await db.collection("rss-entry-analyze").deleteMany({});
-  await db.collection("rss-entry-analyze-batch").deleteMany({});
+  await _db.collection("rss-entry-analyze").deleteMany({});
 }
 
-async function prod(items) {
-  let db = _client.db(process.env.MONGO_DB);
-  let rssEntries = db.collection("rss-entry");
+async function processEntries(items) {
+  let rssEntries = _db.collection("rss-entry");
 
   await Promise.all(items.map((item, index) => new Promise(async (resolve, reject) => {
     let query = { "guid._text": item.guid._text };
@@ -149,16 +143,8 @@ async function prod(items) {
 
     resolve();
   })));
-
-  let batch = {}
-  addBatchValues(batch);
-
-  await db.collection("rss-entry-batch").insertOne(batch);
 }
 
 async function prodReset() {
-  let db = _client.db(process.env.MONGO_DB);
-
-  await db.collection("rss-entry").deleteMany({});
-  await db.collection("rss-entry-batch").deleteMany({});
+  await _db.collection("rss-entry").deleteMany({});
 }
