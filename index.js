@@ -94,6 +94,7 @@ function addBatchValues(item) {
   item.count = _itemCount;
   item.download_dt = _now;
   item.download_dt_local = _now.toLocaleString('en-US', { timeZone: 'America/New_York' });
+  item.is_lambda = !!process.env.LAMBDA_TASK_ROOT;
 }
 
 async function analyzeReset() {
